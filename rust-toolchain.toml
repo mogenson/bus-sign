@@ -1,0 +1,14 @@
+[toolchain]
+channel = "stable"
+components = [
+  "cargo",
+  "clippy",
+  "llvm-tools",
+  "rust-analyzer",
+  "rust-src",
+  "rustfmt",
+]
+targets = [
+  "thumbv6m-none-eabi",
+]
+profile = "minimal"
