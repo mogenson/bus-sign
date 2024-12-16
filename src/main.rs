@@ -4,6 +4,7 @@
 
 use core::str::from_utf8;
 
+use bus_sign::Timestamp;
 use cyw43_pio::PioSpi;
 use embassy_executor::Spawner;
 use embassy_net::dns::DnsSocket;
@@ -55,8 +56,8 @@ async fn main(spawner: Spawner) {
 
     let mut rng = RoscRng;
 
-    let fw = include_bytes!("../../cyw43-firmware/43439A0.bin");
-    let clm = include_bytes!("../../cyw43-firmware/43439A0_clm.bin");
+    let fw = include_bytes!("../cyw43-firmware/43439A0.bin");
+    let clm = include_bytes!("../cyw43-firmware/43439A0_clm.bin");
 
     let pwr = Output::new(p.PIN_23, Level::Low);
     let cs = Output::new(p.PIN_25, Level::High);
@@ -170,13 +171,14 @@ async fn main(spawner: Spawner) {
         #[derive(Deserialize)]
         struct ApiResponse<'a> {
             datetime: &'a str,
-            // other fields as needed
         }
 
         let bytes = body.as_bytes();
         match serde_json_core::de::from_slice::<ApiResponse>(bytes) {
             Ok((output, _used)) => {
                 info!("Datetime: {:?}", output.datetime);
+                let timestamp = Timestamp::parse(output.datetime);
+                info!("Timestamp: {:?}", timestamp);
             }
             Err(_e) => {
                 error!("Failed to parse response body");
