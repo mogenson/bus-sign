@@ -15,6 +15,7 @@ use embassy_rp::clocks::RoscRng;
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::peripherals::{DMA_CH0, PIO0, USB};
 use embassy_rp::pio::{InterruptHandler as PioInterruptHandler, Pio};
+use embassy_rp::rtc::Rtc;
 use embassy_rp::usb::{Driver, InterruptHandler as UsbInterruptHandler};
 use embassy_time::{Duration, Timer};
 use log::*;
@@ -50,6 +51,7 @@ async fn net_task(mut runner: embassy_net::Runner<'static, cyw43::NetDriver<'sta
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
+    let mut rtc = Rtc::new(p.RTC);
 
     let driver = Driver::new(p.USB, Irqs);
     spawner.spawn(logger_task(driver)).unwrap();
@@ -103,7 +105,10 @@ async fn main(spawner: Spawner) {
 
     loop {
         match control.join_wpa2(wifi_ssid, &wifi_password).await {
-            Ok(_) => break,
+            Ok(_) => {
+                info!("connected to {}", wifi_ssid);
+                break;
+            }
             Err(err) => {
                 info!("join failed with status={}", err.status);
             }
@@ -177,8 +182,9 @@ async fn main(spawner: Spawner) {
         match serde_json_core::de::from_slice::<ApiResponse>(bytes) {
             Ok((output, _used)) => {
                 info!("Datetime: {:?}", output.datetime);
-                let timestamp = Timestamp::parse(output.datetime);
+                let timestamp = Timestamp::parse(output.datetime).unwrap();
                 info!("Timestamp: {:?}", timestamp);
+                rtc.set_datetime(timestamp.into()).unwrap();
             }
             Err(_e) => {
                 error!("Failed to parse response body");
