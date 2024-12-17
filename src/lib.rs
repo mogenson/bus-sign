@@ -17,12 +17,44 @@ impl Timestamp {
     /// parse iso8601 string
     pub fn parse(value: &str) -> Option<Self> {
         // ex: "2024-12-15T14:40:18.167264-05:00"
-        let year = value[0..4].parse::<u16>().ok()?;
-        let month = value[5..7].parse::<u8>().ok()?;
-        let day = value[8..10].parse::<u8>().ok()?;
-        let hour = value[11..13].parse::<u8>().ok()?;
-        let minute = value[14..16].parse::<u8>().ok()?;
-        let second = value[17..19].parse::<u8>().ok()?;
+        let mut chars = value.chars();
+
+        if value.len() < 20 {
+            return None;
+        }
+
+        let year: u16 = value[0..4].parse().ok()?;
+
+        if chars.nth(4)? != '-' {
+            return None;
+        }
+
+        let month: u8 = value[5..7].parse().ok()?;
+
+        if chars.nth(7)? != '-' {
+            return None;
+        }
+
+        let day: u8 = value[8..10].parse().ok()?;
+
+        if chars.nth(10)? != 'T' {
+            return None;
+        }
+
+        let hour: u8 = value[11..13].parse().ok()?;
+
+        if chars.nth(13)? != ':' {
+            return None;
+        }
+
+        let minute: u8 = value[14..16].parse().ok()?;
+
+        if chars.nth(16)? != ':' {
+            return None;
+        }
+
+        let second: u8 = value[17..19].parse().ok()?;
+
         Some(Timestamp {
             year,
             month,
