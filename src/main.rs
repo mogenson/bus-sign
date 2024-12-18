@@ -3,7 +3,7 @@
 #![allow(async_fn_in_trait)]
 
 use bus_sign::connect_to_wifi;
-use bus_sign::fetch::fetch_json;
+use bus_sign::fetch::{fetch_next_bus, fetch_time};
 use bus_sign::timestamp::Timestamp;
 use cyw43_pio::PioSpi;
 use embassy_executor::Spawner;
@@ -15,7 +15,6 @@ use embassy_rp::rtc::Rtc;
 use embassy_rp::usb::{Driver, InterruptHandler as UsbInterruptHandler};
 use embassy_time::{Duration, Timer};
 use log::*;
-use serde::Deserialize;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
@@ -80,19 +79,20 @@ async fn main(spawner: Spawner) {
     .await;
 
     loop {
-        #[derive(Deserialize)]
-        struct ApiResponse<'a> {
-            datetime: &'a str,
+        if let Some(now) = fetch_time(stack).await {
+            info!("Setting RTC to {:?}", now);
+            rtc.set_datetime(now.into()).unwrap();
+            break;
         }
+        Timer::after(Duration::from_secs(1)).await;
+    }
 
-        let mut rx_buffer = [0; 4096];
-        let url = "http://worldtimeapi.org/api/timezone/America/New_York";
-        if let Some(json) = fetch_json::<ApiResponse>(stack, &mut rx_buffer, url).await {
-            let timestamp = Timestamp::parse(json.datetime).unwrap();
-            info!("Timestamp: {:?}", timestamp);
-            rtc.set_datetime(timestamp.into()).unwrap();
+    loop {
+        if let Some(next_bus) = fetch_next_bus(stack, "87", env!("BUS_STOP")).await {
+            let now = Timestamp::from(rtc.now().unwrap());
+            let delta = now.seconds_until(next_bus);
+            info!("{:?} seconds until next bus", delta);
         }
-
         Timer::after(Duration::from_secs(5)).await;
     }
 }

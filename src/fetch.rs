@@ -1,7 +1,9 @@
 use core::str::from_utf8;
 
+use core::fmt::Write;
 use embassy_net::dns::DnsSocket;
 use embassy_net::tcp::client::{TcpClient, TcpClientState};
+use heapless;
 use log::*;
 use reqwless::client::HttpClient;
 use reqwless::request::Method;
@@ -11,15 +13,51 @@ use crate::timestamp::Timestamp;
 
 pub async fn fetch_time(stack: embassy_net::Stack<'_>) -> Option<Timestamp> {
     #[derive(Deserialize)]
-    struct WorldTimeApiResponse<'a> {
+    struct Response<'a> {
         datetime: &'a str,
     }
 
     let mut rx_buffer = [0; 1024];
     let url = "http://worldtimeapi.org/api/timezone/America/New_York";
-    let json = fetch_json::<WorldTimeApiResponse>(stack, &mut rx_buffer, url).await?;
+    let json = fetch_json::<Response>(stack, &mut rx_buffer, url).await?;
     info!("Current time: {:?}", json.datetime);
     Timestamp::parse(json.datetime)
+}
+
+pub async fn fetch_next_bus(
+    stack: embassy_net::Stack<'_>,
+    route: &str,
+    stop: &str,
+) -> Option<Timestamp> {
+    #[derive(Deserialize)]
+    struct Attributes<'a> {
+        arrival_time: &'a str,
+    }
+
+    #[derive(Deserialize)]
+    struct Data<'a> {
+        #[serde(borrow)]
+        attributes: Attributes<'a>,
+    }
+
+    #[derive(Deserialize)]
+    struct Response<'a> {
+        #[serde(borrow)]
+        data: heapless::Vec<Data<'a>, 1>,
+    }
+
+    let mut rx_buffer = [0; 2048];
+    let mut url: heapless::String<100> = heapless::String::new();
+    write!(
+        &mut url,
+        "https://api-v3.mbta.com/predictions?filter[route]={}&filter[stop]={}&page[limit]=1",
+        route, stop
+    )
+    .ok()?;
+
+    let json = fetch_json::<Response>(stack, &mut rx_buffer, url.as_str()).await?;
+    info!("Next bus: {:?}", json.data[0].attributes.arrival_time);
+    Timestamp::parse(json.data[0].attributes.arrival_time)
 }
 
 pub async fn fetch_json<'a, T>(
