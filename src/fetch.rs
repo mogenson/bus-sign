@@ -7,7 +7,22 @@ use reqwless::client::HttpClient;
 use reqwless::request::Method;
 use serde::Deserialize;
 
-pub async fn http_get_json<'a, T>(
+use crate::timestamp::Timestamp;
+
+pub async fn fetch_time(stack: embassy_net::Stack<'_>) -> Option<Timestamp> {
+    #[derive(Deserialize)]
+    struct WorldTimeApiResponse<'a> {
+        datetime: &'a str,
+    }
+
+    let mut rx_buffer = [0; 1024];
+    let url = "http://worldtimeapi.org/api/timezone/America/New_York";
+    let json = fetch_json::<WorldTimeApiResponse>(stack, &mut rx_buffer, url).await?;
+    info!("Current time: {:?}", json.datetime);
+    Timestamp::parse(json.datetime)
+}
+
+pub async fn fetch_json<'a, T>(
     stack: embassy_net::Stack<'_>,
     rx_buffer: &'a mut [u8],
     url: &str,
