@@ -64,6 +64,21 @@ impl Timestamp {
             second,
         })
     }
+
+    fn seconds_from_midnight(self) -> u32 {
+        self.hour as u32 * 3600 + self.minute as u32 * 60 + self.second as u32
+    }
+
+    /// returns seconds between self and future if future is in the future, else None
+    pub fn seconds_until(self, future: Self) -> Option<u32> {
+        let now = self.seconds_from_midnight();
+        let then = future.seconds_from_midnight();
+        if then > now {
+            Some(then - now)
+        } else {
+            None
+        }
+    }
 }
 
 impl From<DateTime> for Timestamp {
@@ -79,16 +94,16 @@ impl From<DateTime> for Timestamp {
     }
 }
 
-impl Into<DateTime> for Timestamp {
-    fn into(self) -> DateTime {
+impl From<Timestamp> for DateTime {
+    fn from(val: Timestamp) -> Self {
         DateTime {
-            year: self.year,
-            month: self.month,
-            day: self.day,
+            year: val.year,
+            month: val.month,
+            day: val.day,
             day_of_week: DayOfWeek::Sunday, // dummy value
-            hour: self.hour,
-            minute: self.minute,
-            second: self.second,
+            hour: val.hour,
+            minute: val.minute,
+            second: val.second,
         }
     }
 }

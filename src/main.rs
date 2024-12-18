@@ -104,7 +104,7 @@ async fn main(spawner: Spawner) {
     let wifi_password = env!("WIFI_PASSWORD");
 
     loop {
-        match control.join_wpa2(wifi_ssid, &wifi_password).await {
+        match control.join_wpa2(wifi_ssid, wifi_password).await {
             Ok(_) => {
                 info!("connected to {}", wifi_ssid);
                 break;
@@ -135,63 +135,70 @@ async fn main(spawner: Spawner) {
     // And now we can use it!
 
     loop {
-        let mut rx_buffer = [0; 8192];
-
-        let client_state = TcpClientState::<1, 1024, 1024>::new();
-        let tcp_client = TcpClient::new(stack, &client_state);
-        let dns_client = DnsSocket::new(stack);
-
-        let mut http_client = HttpClient::new(&tcp_client, &dns_client);
-        let url = "http://worldtimeapi.org/api/timezone/America/New_York";
-
-        info!("connecting to {}", &url);
-
-        let mut request = match http_client.request(Method::GET, &url).await {
-            Ok(req) => req,
-            Err(e) => {
-                error!("Failed to make HTTP request: {:?}", e);
-                return; // handle the error
-            }
-        };
-
-        let response = match request.send(&mut rx_buffer).await {
-            Ok(resp) => resp,
-            Err(_e) => {
-                error!("Failed to send HTTP request");
-                return; // handle the error;
-            }
-        };
-
-        let body = match from_utf8(response.body().read_to_end().await.unwrap()) {
-            Ok(b) => b,
-            Err(_e) => {
-                error!("Failed to read response body");
-                return; // handle the error
-            }
-        };
-        info!("Response body: {:?}", &body);
-
-        // parse the response body and update the RTC
-
         #[derive(Deserialize)]
         struct ApiResponse<'a> {
             datetime: &'a str,
         }
 
-        let bytes = body.as_bytes();
-        match serde_json_core::de::from_slice::<ApiResponse>(bytes) {
-            Ok((output, _used)) => {
-                info!("Datetime: {:?}", output.datetime);
-                let timestamp = Timestamp::parse(output.datetime).unwrap();
-                info!("Timestamp: {:?}", timestamp);
-                rtc.set_datetime(timestamp.into()).unwrap();
-            }
-            Err(_e) => {
-                error!("Failed to parse response body");
-                return; // handle the error
-            }
+        let mut rx_buffer = [0; 4096];
+        let url = "http://worldtimeapi.org/api/timezone/America/New_York";
+        if let Some(json) = http_get::<ApiResponse>(stack, &mut rx_buffer, url).await {
+            let timestamp = Timestamp::parse(json.datetime).unwrap();
+            info!("Timestamp: {:?}", timestamp);
+            rtc.set_datetime(timestamp.into()).unwrap();
         }
 
         Timer::after(Duration::from_secs(5)).await;
+    }
+}
+
+async fn http_get<'a, T>(
+    stack: embassy_net::Stack<'_>,
+    rx_buffer: &'a mut [u8],
+    url: &str,
+) -> Option<T>
+where
+    T: Deserialize<'a>,
+{
+    let client_state = TcpClientState::<1, 1024, 1024>::new();
+    let tcp_client = TcpClient::new(stack, &client_state);
+    let dns_client = DnsSocket::new(stack);
+
+    let mut http_client = HttpClient::new(&tcp_client, &dns_client);
+
+    info!("connecting to {}", &url);
+
+    let mut request = match http_client.request(Method::GET, url).await {
+        Ok(req) => req,
+        Err(e) => {
+            error!("Failed to make HTTP request: {:?}", e);
+            return None;
+        }
+    };
+
+    let response = match request.send(rx_buffer).await {
+        Ok(resp) => resp,
+        Err(_e) => {
+            error!("Failed to send HTTP request");
+            return None;
+        }
+    };
+
+    let body = match from_utf8(response.body().read_to_end().await.unwrap()) {
+        Ok(b) => b,
+        Err(_e) => {
+            error!("Failed to read response body");
+            return None;
+        }
+    };
+    info!("Response body: {:?}", &body);
+
+    let bytes = body.as_bytes();
+    match serde_json_core::de::from_slice::<T>(bytes) {
+        Ok((output, _used)) => Some(output),
+        Err(_e) => {
+            error!("Failed to parse response body");
+            None
+        }
     }
 }
