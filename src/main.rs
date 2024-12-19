@@ -78,13 +78,15 @@ async fn main(spawner: Spawner) {
     )
     .await;
 
+    let mut wait: u64 = 2;
     loop {
         if let Some(now) = fetch_time(stack).await {
             info!("Setting RTC to {:?}", now);
             rtc.set_datetime(now.into()).unwrap();
             break;
         }
-        Timer::after(Duration::from_secs(1)).await;
+        Timer::after(Duration::from_secs(wait)).await;
+        wait *= 2;
     }
 
     loop {

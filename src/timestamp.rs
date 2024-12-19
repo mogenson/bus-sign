@@ -10,44 +10,39 @@ pub struct Timestamp {
     pub minute: u8,
     pub second: u8,
 }
-
 impl Timestamp {
     /// parse iso8601 string
     pub fn parse(value: &str) -> Option<Self> {
         // ex: "2024-12-15T14:40:18.167264-05:00"
-        let mut chars = value.chars();
-
         if value.len() < 20 {
             return None;
         }
-
         let year: u16 = value[0..4].parse().ok()?;
-
-        if chars.nth(4)? != '-' {
+        if value[4..].chars().next()? != '-' {
             return None;
         }
 
         let month: u8 = value[5..7].parse().ok()?;
 
-        if chars.nth(7)? != '-' {
+        if value[7..].chars().next()? != '-' {
             return None;
         }
 
         let day: u8 = value[8..10].parse().ok()?;
 
-        if chars.nth(10)? != 'T' {
+        if value[10..].chars().next()? != 'T' {
             return None;
         }
 
         let hour: u8 = value[11..13].parse().ok()?;
 
-        if chars.nth(13)? != ':' {
+        if value[13..].chars().next()? != ':' {
             return None;
         }
 
         let minute: u8 = value[14..16].parse().ok()?;
 
-        if chars.nth(16)? != ':' {
+        if value[16..].chars().next()? != ':' {
             return None;
         }
 
