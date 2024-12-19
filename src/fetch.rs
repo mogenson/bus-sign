@@ -3,9 +3,11 @@ use core::str::from_utf8;
 use core::fmt::Write;
 use embassy_net::dns::DnsSocket;
 use embassy_net::tcp::client::{TcpClient, TcpClientState};
+use embassy_rp::clocks::RoscRng;
 use heapless;
 use log::*;
-use reqwless::client::HttpClient;
+use rand::RngCore;
+use reqwless::client::{HttpClient, TlsConfig, TlsVerify};
 use reqwless::request::Method;
 use serde::Deserialize;
 
@@ -18,7 +20,7 @@ pub async fn fetch_time(stack: embassy_net::Stack<'_>) -> Option<Timestamp> {
     }
 
     let mut rx_buffer = [0; 1024];
-    let url = "http://worldtimeapi.org/api/timezone/America/New_York";
+    let url = "https://worldtimeapi.org/api/timezone/America/New_York";
     let json = fetch_json::<Response>(stack, &mut rx_buffer, url).await?;
     info!("Current time: {:?}", json.datetime);
     Timestamp::parse(json.datetime)
@@ -68,11 +70,23 @@ pub async fn fetch_json<'a, T>(
 where
     T: Deserialize<'a>,
 {
+    let mut rng = RoscRng;
+    let seed = rng.next_u64();
+
+    let mut tls_read_buffer = [0; 16640];
+    let mut tls_write_buffer = [0; 16640];
+
     let client_state = TcpClientState::<1, 1024, 1024>::new();
     let tcp_client = TcpClient::new(stack, &client_state);
     let dns_client = DnsSocket::new(stack);
+    let tls_config = TlsConfig::new(
+        seed,
+        &mut tls_read_buffer,
+        &mut tls_write_buffer,
+        TlsVerify::None,
+    );
 
-    let mut http_client = HttpClient::new(&tcp_client, &dns_client);
+    let mut http_client = HttpClient::new_with_tls(&tcp_client, &dns_client, tls_config);
 
     info!("connecting to {}", &url);
 
