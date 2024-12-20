@@ -90,7 +90,7 @@ async fn main(spawner: Spawner) {
     }
 
     loop {
-        if let Some(next_bus) = fetch_next_bus(stack, "87", env!("BUS_STOP")).await {
+        if let Some(next_bus) = fetch_next_bus(stack, 87, env!("BUS_STOP")).await {
             let now = Timestamp::from(rtc.now().unwrap());
             let delta = now.seconds_until(next_bus);
             info!("{:?} seconds until next bus", delta);

@@ -21,6 +21,7 @@ embassy-sync = { version = "0.6.0", features = ["defmt"] }
 embassy-time = { version = "0.3.0", features = ["defmt", "defmt-timestamp-uptime"] }
 embassy-usb-driver = { version = "0.1.0", features = ["defmt"] }
 embassy-usb-logger = { version = "0.2.0" }
+embedded-tls = {version = "0.17.0", default-features = false }
 heapless = { version = "0.8.0", features = ["defmt-03", "serde"] }
 log = "0.4"
 panic-probe = { version = "0.3", features = ["print-defmt"] }
@@ -29,7 +30,7 @@ pio-proc = "0.2.2"
 portable-atomic = { version = "1.5.1", features = ["critical-section"] }
 rand = { version = "0.8.5", default-features = false }
 rand_core = "0.6.4"
-reqwless = { version = "0.13.0", features = ["defmt"] }
+reqwless = { version = "0.13.0", default-features = false, features = ["defmt"] }
 serde = { version = "1.0.203", default-features = false, features = ["derive"] }
 serde-json-core = "0.5.1"
 static_cell = { version = "2" }
