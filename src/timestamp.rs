@@ -58,12 +58,12 @@ impl Timestamp {
         })
     }
 
-    fn seconds_from_midnight(self) -> u32 {
-        self.hour as u32 * 3600 + self.minute as u32 * 60 + self.second as u32
+    fn seconds_from_midnight(self) -> u64 {
+        self.hour as u64 * 3600 + self.minute as u64 * 60 + self.second as u64
     }
 
     /// returns seconds between self and future if future is in the future, else None
-    pub fn seconds_until(self, future: Self) -> Option<u32> {
+    pub fn seconds_until(self, future: Self) -> Option<u64> {
         let now = self.seconds_from_midnight();
         let then = future.seconds_from_midnight();
         if then > now {
