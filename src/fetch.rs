@@ -1,5 +1,3 @@
-use core::str::from_utf8;
-
 use core::fmt::Write;
 use embassy_net::dns::DnsSocket;
 use embassy_net::tcp::client::{TcpClient, TcpClientState};
@@ -38,10 +36,7 @@ pub async fn fetch_next_bus(
     http_get_timestamp(stack, url.as_str()).await
 }
 
-async fn http_get_timestamp(
-    stack: embassy_net::Stack<'_>,
-    url: &str,
-) -> Option<Timestamp> {
+async fn http_get_timestamp(stack: embassy_net::Stack<'_>, url: &str) -> Option<Timestamp> {
     let client_state = TcpClientState::<1, 1024, 1024>::new();
     let tcp_client = TcpClient::new(stack, &client_state);
     let dns_client = DnsSocket::new(stack);
@@ -67,17 +62,15 @@ async fn http_get_timestamp(
         }
     };
 
-    let body = match from_utf8(response.body().read_to_end().await.unwrap()) {
-        Ok(b) => b,
+    let body = match response.body().read_to_end().await {
+        Ok(content) => content,
         Err(_e) => {
             error!("Failed to read response body");
             return None;
         }
     };
-    info!("Response body: {:?}", &body);
 
-    let bytes = body.as_bytes();
-    match serde_json_core::de::from_slice::<Response>(bytes) {
+    match serde_json_core::de::from_slice::<Response>(body) {
         Ok((json, _used)) => Timestamp::parse(json.datetime),
         Err(_e) => {
             error!("Failed to parse response body");
