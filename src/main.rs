@@ -9,7 +9,7 @@ use cyw43_pio::PioSpi;
 use embassy_executor::Spawner;
 use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Level, Output};
-use embassy_rp::peripherals::{DMA_CH0, PIO0, USB};
+use embassy_rp::peripherals::{DMA_CH0, PIO0, RTC, USB};
 use embassy_rp::pio::{InterruptHandler as PioInterruptHandler, Pio};
 use embassy_rp::rtc::Rtc;
 use embassy_rp::usb::{Driver, InterruptHandler as UsbInterruptHandler};
@@ -33,6 +33,39 @@ async fn cyw43_task(
     runner: cyw43::Runner<'static, Output<'static>, PioSpi<'static, PIO0, 0, DMA_CH0>>,
 ) -> ! {
     runner.run().await
+}
+
+#[embassy_executor::task]
+async fn next_bus_task(
+    stack: embassy_net::Stack<'static>,
+    // rtc: &'static RtcType<'static>,
+    rtc: Rtc<'static, RTC>,
+    route: u8,
+    stop: &'static str,
+) {
+    let one_minute = 60;
+    loop {
+        let Some(next_bus) = fetch_next_bus(stack, route, stop).await else {
+            Timer::after_secs(one_minute).await;
+            continue;
+        };
+
+        let Ok(datetime) = rtc.now() else {
+            Timer::after_secs(one_minute).await;
+            continue;
+        };
+
+        let now = Timestamp::from(datetime);
+        let Some(delta) = now.seconds_until(next_bus) else {
+            Timer::after_secs(one_minute).await;
+            continue;
+        };
+
+        let minutes = delta / 2;
+        info!("{:?} minutes until next bus", minutes);
+        let wait = core::cmp::min(minutes, one_minute);
+        Timer::after_secs(wait).await;
+    }
 }
 
 #[embassy_executor::main]
@@ -89,12 +122,16 @@ async fn main(spawner: Spawner) {
         wait *= 2;
     }
 
-    if let Some(next_bus) = fetch_next_bus(stack, 87, env!("BUS_STOP")).await {
-        let now = Timestamp::from(rtc.now().unwrap());
-        let delta = now.seconds_until(next_bus);
-        info!("{:?} seconds until next bus", delta);
-    }
-    Timer::after(Duration::from_secs(5)).await;
+    // if let Some(next_bus) = fetch_next_bus(stack, 87, env!("BUS_STOP")).await {
+    //     let now = Timestamp::from(rtc.now().unwrap());
+    //     let delta = now.seconds_until(next_bus);
+    //     info!("{:?} seconds until next bus", delta);
+    // }
+    // Timer::after(Duration::from_secs(5)).await;
+
+    spawner
+        .spawn(next_bus_task(stack, rtc, 87, env!("BUS_STOP")))
+        .unwrap();
 
     loop {
         info!("led on");
