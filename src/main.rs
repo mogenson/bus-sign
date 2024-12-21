@@ -72,7 +72,7 @@ async fn main(spawner: Spawner) {
     let stack = connect_to_wifi(
         spawner,
         net_device,
-        control,
+        &mut control,
         env!("WIFI_SSID"),
         env!("WIFI_PASSWORD"),
     )
@@ -89,12 +89,20 @@ async fn main(spawner: Spawner) {
         wait *= 2;
     }
 
+    if let Some(next_bus) = fetch_next_bus(stack, 87, env!("BUS_STOP")).await {
+        let now = Timestamp::from(rtc.now().unwrap());
+        let delta = now.seconds_until(next_bus);
+        info!("{:?} seconds until next bus", delta);
+    }
+    Timer::after(Duration::from_secs(5)).await;
+
     loop {
-        if let Some(next_bus) = fetch_next_bus(stack, 87, env!("BUS_STOP")).await {
-            let now = Timestamp::from(rtc.now().unwrap());
-            let delta = now.seconds_until(next_bus);
-            info!("{:?} seconds until next bus", delta);
-        }
-        Timer::after(Duration::from_secs(5)).await;
+        info!("led on");
+        control.gpio_set(0, true).await;
+        Timer::after_secs(1).await;
+
+        info!("led off");
+        control.gpio_set(0, false).await;
+        Timer::after_secs(1).await;
     }
 }

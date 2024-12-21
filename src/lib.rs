@@ -24,7 +24,7 @@ async fn net_task(mut runner: embassy_net::Runner<'static, cyw43::NetDriver<'sta
 pub async fn connect_to_wifi(
     spawner: Spawner,
     net_device: NetDriver<'static>,
-    mut control: Control<'static>,
+    control: &mut Control<'static>,
     wifi_ssid: &'static str,
     wifi_password: &'static str,
 ) -> Stack<'static> {
