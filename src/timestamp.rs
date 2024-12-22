@@ -1,4 +1,5 @@
 use embassy_rp::rtc::{DateTime, DayOfWeek};
+use embassy_time::Instant;
 
 /// Same as a DateTime without the day_of_week member
 #[derive(core::fmt::Debug, defmt::Format)]
@@ -58,19 +59,27 @@ impl Timestamp {
         })
     }
 
-    fn seconds_from_midnight(self) -> u64 {
-        self.hour as u64 * 3600 + self.minute as u64 * 60 + self.second as u64
-    }
-
-    /// returns seconds between self and future if future is in the future, else None
-    pub fn seconds_until(self, future: Self) -> Option<u64> {
-        let now = self.seconds_from_midnight();
-        let then = future.seconds_from_midnight();
-        if then > now {
-            Some(then - now)
-        } else {
-            None
-        }
+    fn as_secs(&self) -> u64 {
+        self.year as u64 * 31536000
+            + (match self.month as u64 {
+                1 => 31,
+                2 => 31 + 28,
+                3 => 31 + 28 + 31,
+                4 => 31 + 28 + 31 + 30,
+                5 => 31 + 28 + 31 + 30 + 31,
+                6 => 31 + 28 + 31 + 30 + 31 + 30,
+                7 => 31 + 28 + 31 + 30 + 31 + 30 + 31,
+                8 => 31 + 28 + 31 + 30 + 31 + 30 + 31 + 31,
+                9 => 31 + 28 + 31 + 30 + 31 + 30 + 31 + 31 + 30,
+                10 => 31 + 28 + 31 + 30 + 31 + 30 + 31 + 31 + 30 + 31,
+                11 => 31 + 28 + 31 + 30 + 31 + 30 + 31 + 31 + 30 + 31 + 30,
+                12 => 31 + 28 + 31 + 30 + 31 + 30 + 31 + 31 + 30 + 31 + 30 + 31,
+                _ => 0,
+            }) * 86400
+            + self.day as u64 * 86400
+            + self.hour as u64 * 3600
+            + self.minute as u64 * 60
+            + self.second as u64
     }
 }
 
@@ -98,5 +107,11 @@ impl From<Timestamp> for DateTime {
             minute: val.minute,
             second: val.second,
         }
+    }
+}
+
+impl From<Timestamp> for Instant {
+    fn from(val: Timestamp) -> Self {
+        Instant::from_secs(val.as_secs())
     }
 }

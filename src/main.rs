@@ -15,7 +15,7 @@ use embassy_rp::rtc::Rtc;
 use embassy_rp::usb::{Driver, InterruptHandler as UsbInterruptHandler};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::mutex::Mutex;
-use embassy_time::{Duration, Timer};
+use embassy_time::{Duration, Instant, Timer};
 use log::*;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
@@ -47,41 +47,36 @@ async fn next_bus_task(
     route: u8,
     stop: &'static str,
 ) {
-    let one_minute = 60;
+    let one_minute = Duration::from_secs(60);
     loop {
-        let Some(next_bus) = fetch_next_bus(stack, route, stop).await else {
-            Timer::after_secs(one_minute).await;
+        let Some(arrival_time) = fetch_next_bus(stack, route, stop).await else {
+            Timer::after(one_minute).await;
             continue;
         };
+        info!("Route {}: next bus arrives at: {:?}", route, arrival_time);
 
-        info!("bus route {} time {:?}", route, next_bus);
-
-        let rtc_unlocked = rtc.lock().await;
-        let Some(rtc_ref) = rtc_unlocked.as_ref() else {
-            Timer::after_secs(one_minute).await;
-            continue;
+        let next_bus = Instant::from(arrival_time);
+        let datetime = {
+            let rtc_locked = rtc.lock().await;
+            let rtc_ref = rtc_locked.as_ref().unwrap();
+            rtc_ref.now().unwrap()
         };
+        let now = Instant::from(Timestamp::from(datetime));
+        let delta = next_bus.saturating_duration_since(now);
 
-        let Ok(datetime) = rtc_ref.now() else {
-            Timer::after_secs(one_minute).await;
-            continue;
-        };
+        info!(
+            "Route {}: time to next bus: {} min",
+            route,
+            delta.as_secs() / 60
+        );
 
-        // let Ok(datetime) = rtc.now() else {
-        //     Timer::after_secs(one_minute).await;
-        //     continue;
-        // };
-
-        let now = Timestamp::from(datetime);
-        let Some(delta) = now.seconds_until(next_bus) else {
-            Timer::after_secs(one_minute).await;
-            continue;
-        };
-
-        let minutes = delta / 2;
-        info!("{:?} minutes until next bus", minutes);
-        let wait = core::cmp::min(minutes, one_minute);
-        Timer::after_secs(wait).await;
+        let wait = core::cmp::max(delta / 2, one_minute);
+        info!(
+            "Route {}: waiting {} min to fetch again",
+            route,
+            wait.as_secs() / 60
+        );
+        Timer::after(wait).await;
     }
 }
 
