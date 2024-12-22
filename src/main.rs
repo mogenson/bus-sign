@@ -13,10 +13,15 @@ use embassy_rp::peripherals::{DMA_CH0, PIO0, RTC, USB};
 use embassy_rp::pio::{InterruptHandler as PioInterruptHandler, Pio};
 use embassy_rp::rtc::Rtc;
 use embassy_rp::usb::{Driver, InterruptHandler as UsbInterruptHandler};
+use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
+use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Timer};
 use log::*;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
+
+type RtcType<'a> = Mutex<ThreadModeRawMutex, Option<Rtc<'a, RTC>>>;
+static SHARED_RTC: RtcType = Mutex::new(None);
 
 bind_interrupts!(struct Irqs {
     USBCTRL_IRQ => UsbInterruptHandler<USB>;
@@ -35,11 +40,10 @@ async fn cyw43_task(
     runner.run().await
 }
 
-#[embassy_executor::task]
+#[embassy_executor::task(pool_size = 2)]
 async fn next_bus_task(
     stack: embassy_net::Stack<'static>,
-    // rtc: &'static RtcType<'static>,
-    rtc: Rtc<'static, RTC>,
+    rtc: &'static RtcType<'static>,
     route: u8,
     stop: &'static str,
 ) {
@@ -50,10 +54,23 @@ async fn next_bus_task(
             continue;
         };
 
-        let Ok(datetime) = rtc.now() else {
+        info!("bus route {} time {:?}", route, next_bus);
+
+        let rtc_unlocked = rtc.lock().await;
+        let Some(rtc_ref) = rtc_unlocked.as_ref() else {
             Timer::after_secs(one_minute).await;
             continue;
         };
+
+        let Ok(datetime) = rtc_ref.now() else {
+            Timer::after_secs(one_minute).await;
+            continue;
+        };
+
+        // let Ok(datetime) = rtc.now() else {
+        //     Timer::after_secs(one_minute).await;
+        //     continue;
+        // };
 
         let now = Timestamp::from(datetime);
         let Some(delta) = now.seconds_until(next_bus) else {
@@ -122,23 +139,21 @@ async fn main(spawner: Spawner) {
         wait *= 2;
     }
 
-    // if let Some(next_bus) = fetch_next_bus(stack, 87, env!("BUS_STOP")).await {
-    //     let now = Timestamp::from(rtc.now().unwrap());
-    //     let delta = now.seconds_until(next_bus);
-    //     info!("{:?} seconds until next bus", delta);
-    // }
-    // Timer::after(Duration::from_secs(5)).await;
+    {
+        *(SHARED_RTC.lock().await) = Some(rtc);
+    }
 
     spawner
-        .spawn(next_bus_task(stack, rtc, 87, env!("BUS_STOP")))
+        .spawn(next_bus_task(stack, &SHARED_RTC, 87, env!("BUS_STOP")))
+        .unwrap();
+
+    spawner
+        .spawn(next_bus_task(stack, &SHARED_RTC, 88, env!("BUS_STOP")))
         .unwrap();
 
     loop {
-        info!("led on");
         control.gpio_set(0, true).await;
         Timer::after_secs(1).await;
-
-        info!("led off");
         control.gpio_set(0, false).await;
         Timer::after_secs(1).await;
     }
