@@ -2,9 +2,9 @@
 #![no_main]
 #![allow(async_fn_in_trait)]
 
-use bus_sign::connect_to_wifi;
 use bus_sign::fetch::{fetch_next_bus, fetch_time};
 use bus_sign::rtc;
+use bus_sign::{connect_to_wifi, duration_as_minutes};
 use cyw43_pio::PioSpi;
 use embassy_executor::Spawner;
 use embassy_rp::bind_interrupts;
@@ -51,14 +51,14 @@ async fn next_bus_task(stack: embassy_net::Stack<'static>, route: u8, stop: &'st
         info!(
             "Route {}: time to next bus: {} min",
             route,
-            delta.as_secs() / 60
+            duration_as_minutes(delta)
         );
 
         let wait = core::cmp::max(delta / 2, one_minute);
         info!(
             "Route {}: waiting {} min to fetch again",
             route,
-            wait.as_secs() / 60
+            duration_as_minutes(wait)
         );
         Timer::after(wait).await;
     }

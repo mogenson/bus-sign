@@ -3,7 +3,7 @@
 use embassy_executor::Spawner;
 use embassy_net::{Config, Stack, StackResources};
 use embassy_rp::clocks::RoscRng;
-use embassy_time::Timer;
+use embassy_time::{Duration, Timer};
 use log::*;
 use rand::RngCore;
 use static_cell::StaticCell;
@@ -21,6 +21,10 @@ pub use timestamp::*;
 #[embassy_executor::task]
 async fn net_task(mut runner: embassy_net::Runner<'static, cyw43::NetDriver<'static>>) -> ! {
     runner.run().await
+}
+
+pub fn duration_as_minutes(duration: Duration) -> u64 {
+    duration.as_secs() / 60
 }
 
 pub async fn connect_to_wifi(
