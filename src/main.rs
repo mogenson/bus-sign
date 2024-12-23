@@ -4,24 +4,18 @@
 
 use bus_sign::connect_to_wifi;
 use bus_sign::fetch::{fetch_next_bus, fetch_time};
-use bus_sign::timestamp::Timestamp;
+use bus_sign::rtc;
 use cyw43_pio::PioSpi;
 use embassy_executor::Spawner;
 use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Level, Output};
-use embassy_rp::peripherals::{DMA_CH0, PIO0, RTC, USB};
+use embassy_rp::peripherals::{DMA_CH0, PIO0, USB};
 use embassy_rp::pio::{InterruptHandler as PioInterruptHandler, Pio};
-use embassy_rp::rtc::Rtc;
 use embassy_rp::usb::{Driver, InterruptHandler as UsbInterruptHandler};
-use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
-use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Instant, Timer};
 use log::*;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
-
-type RtcType<'a> = Mutex<ThreadModeRawMutex, Option<Rtc<'a, RTC>>>;
-static SHARED_RTC: RtcType = Mutex::new(None);
 
 bind_interrupts!(struct Irqs {
     USBCTRL_IRQ => UsbInterruptHandler<USB>;
@@ -41,12 +35,7 @@ async fn cyw43_task(
 }
 
 #[embassy_executor::task(pool_size = 2)]
-async fn next_bus_task(
-    stack: embassy_net::Stack<'static>,
-    rtc: &'static RtcType<'static>,
-    route: u8,
-    stop: &'static str,
-) {
+async fn next_bus_task(stack: embassy_net::Stack<'static>, route: u8, stop: &'static str) {
     let one_minute = Duration::from_secs(60);
     loop {
         let Some(arrival_time) = fetch_next_bus(stack, route, stop).await else {
@@ -56,12 +45,7 @@ async fn next_bus_task(
         info!("Route {}: next bus arrives at: {:?}", route, arrival_time);
 
         let next_bus = Instant::from(arrival_time);
-        let datetime = {
-            let rtc_locked = rtc.lock().await;
-            let rtc_ref = rtc_locked.as_ref().unwrap();
-            rtc_ref.now().unwrap()
-        };
-        let now = Instant::from(Timestamp::from(datetime));
+        let now = Instant::from(rtc::now().await);
         let delta = next_bus.saturating_duration_since(now);
 
         info!(
@@ -83,7 +67,6 @@ async fn next_bus_task(
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
-    let mut rtc = Rtc::new(p.RTC);
 
     let driver = Driver::new(p.USB, Irqs);
     spawner.spawn(logger_task(driver)).unwrap();
@@ -123,27 +106,23 @@ async fn main(spawner: Spawner) {
     )
     .await;
 
-    let mut wait: u64 = 2;
-    loop {
+    let mut wait = Duration::from_secs(2);
+    let now = loop {
         if let Some(now) = fetch_time(stack).await {
-            info!("Setting RTC to {:?}", now);
-            rtc.set_datetime(now.into()).unwrap();
-            break;
+            break now;
         }
-        Timer::after(Duration::from_secs(wait)).await;
+        Timer::after(wait).await;
         wait *= 2;
-    }
+    };
 
-    {
-        *(SHARED_RTC.lock().await) = Some(rtc);
-    }
+    rtc::init(p.RTC, now).await;
 
     spawner
-        .spawn(next_bus_task(stack, &SHARED_RTC, 87, env!("BUS_STOP")))
+        .spawn(next_bus_task(stack, 87, env!("BUS_STOP")))
         .unwrap();
 
     spawner
-        .spawn(next_bus_task(stack, &SHARED_RTC, 88, env!("BUS_STOP")))
+        .spawn(next_bus_task(stack, 88, env!("BUS_STOP")))
         .unwrap();
 
     loop {

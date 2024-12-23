@@ -11,9 +11,11 @@ use static_cell::StaticCell;
 use cyw43::{Control, NetDriver};
 
 pub mod fetch;
+pub mod rtc;
 pub mod timestamp;
 
 pub use fetch::*;
+pub use rtc::*;
 pub use timestamp::*;
 
 #[embassy_executor::task]
