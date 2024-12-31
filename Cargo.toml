@@ -6,22 +6,23 @@ license = "MIT"
 resolver = "2"
 
 [dependencies]
-cortex-m = { version = "0.7.6", features = ["inline-asm"] }
+cortex-m = { version = "0.7.6", features = ["critical-section-single-core" ] }
 cortex-m-rt = "0.7.0"
-cyw43 = { version = "0.2.0", features = ["defmt", "firmware-logs"] }
-cyw43-pio = { version = "0.2.0", features = ["defmt", "overclock"] }
+cyw43 = { version = "0.1.0", features = ["defmt", "firmware-logs"] }
+cyw43-pio = { version = "0.1.0", features = ["defmt", "overclock"] }
 defmt = "0.3"
-defmt-rtt = "0.4"
-embassy-embedded-hal = { version = "0.2.0", features = ["defmt"] }
-embassy-executor = { version = "0.6.0", features = ["arch-cortex-m", "executor-thread", "executor-interrupt", "defmt", "integrated-timers", "task-arena-size-98304"] }
-embassy-futures = { version = "0.1.0" }
-embassy-net = { version = "0.5.0", features = ["defmt", "dns", "tcp", "udp", "dhcpv4", "medium-ethernet"] }
-embassy-rp = { version = "0.2.0", features = ["defmt", "unstable-pac", "time-driver", "critical-section-impl"] }
-embassy-sync = { version = "0.6.0", features = ["defmt"] }
+defmt-rtt = "0.3"
+embassy-executor = { version = "0.5.0", features = [ "arch-cortex-m", "defmt", "executor-interrupt", "executor-thread", "integrated-timers", "nightly" ] }
+embassy-futures = { version = "0.1.1" }
+embassy-net = { version = "0.4.0", features = ["defmt", "dns", "tcp", "udp", "dhcpv4", "medium-ethernet"] }
+embassy-rp = { version = "0.1.0", features = ["defmt", "unstable-pac", "time-driver"] }
+embassy-sync = { version = "0.5.0", features = ["defmt"] }
 embassy-time = { version = "0.3.0", features = ["defmt", "defmt-timestamp-uptime"] }
 embassy-usb-driver = { version = "0.1.0", features = ["defmt"] }
 embassy-usb-logger = { version = "0.2.0" }
-embedded-tls = {version = "0.17.0", default-features = false }
+embedded-graphics = "0.7.1"
+embedded-graphics-core = "0.3.3"
+galactic-unicorn-embassy = { version = "0.5.0", git = "https://github.com/domneedham/pimoroni-unicorn-rs" }
 heapless = { version = "0.8.0", features = ["defmt-03", "serde"] }
 log = "0.4"
 panic-probe = { version = "0.3", features = ["print-defmt"] }
@@ -30,10 +31,11 @@ pio-proc = "0.2.2"
 portable-atomic = { version = "1.5.1", features = ["critical-section"] }
 rand = { version = "0.8.5", default-features = false }
 rand_core = "0.6.4"
-reqwless = { version = "0.13.0", default-features = false, features = ["defmt"] }
+reqwless = { version = "0.12.1", default-features = false, features = ["defmt"] }
 serde = { version = "1.0.203", default-features = false, features = ["derive"] }
 serde-json-core = "0.5.1"
-static_cell = { version = "2" }
+static_cell = { version = "2.1.0", features = ["nightly"] }
+unicorn-graphics = { version = "0.2.1", git = "https://github.com/domneedham/pimoroni-unicorn-rs" }
 
 # cargo build/run
 [profile.dev]

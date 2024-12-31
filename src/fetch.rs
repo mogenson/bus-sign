@@ -1,5 +1,6 @@
 use core::fmt::Write;
 use embassy_net::dns::DnsSocket;
+use embassy_net::Stack;
 use embassy_net::tcp::client::{TcpClient, TcpClientState};
 use heapless;
 use log::*;
@@ -14,13 +15,13 @@ struct Response<'a> {
     datetime: &'a str,
 }
 
-pub async fn fetch_time(stack: embassy_net::Stack<'_>) -> Option<Timestamp> {
+pub async fn fetch_time(stack: &'static Stack<cyw43::NetDriver<'static>>) -> Option<Timestamp> {
     let url = "http://worldtimeapi.org/api/timezone/America/New_York";
     http_get_timestamp(stack, url).await
 }
 
 pub async fn fetch_next_bus(
-    stack: embassy_net::Stack<'_>,
+    stack: &'static Stack<cyw43::NetDriver<'static>>,
     route: u8,
     stop: &str,
 ) -> Option<Timestamp> {
@@ -36,7 +37,7 @@ pub async fn fetch_next_bus(
     http_get_timestamp(stack, url.as_str()).await
 }
 
-async fn http_get_timestamp(stack: embassy_net::Stack<'_>, url: &str) -> Option<Timestamp> {
+async fn http_get_timestamp(stack: &'static Stack<cyw43::NetDriver<'static>>, url: &str) -> Option<Timestamp> {
     let client_state = TcpClientState::<1, 1024, 1024>::new();
     let tcp_client = TcpClient::new(stack, &client_state);
     let dns_client = DnsSocket::new(stack);
