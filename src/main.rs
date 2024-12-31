@@ -1,21 +1,28 @@
 #![no_std]
 #![no_main]
-#![allow(async_fn_in_trait)]
 #![feature(type_alias_impl_trait)]
 
 use bus_sign::fetch::{fetch_next_bus, fetch_time};
 use bus_sign::{connect_to_wifi, duration_as_minutes, WiFiPins};
 use bus_sign::{rtc, start_usb_logger};
+use core::fmt::Write;
+use cyw43::NetDriver;
 use embassy_executor::Spawner;
 use embassy_net::Stack;
 use embassy_rp::gpio::{Input, Pull};
 use embassy_time::{Duration, Instant, Timer};
+use embedded_graphics::mono_font::{ascii::FONT_6X10, MonoTextStyle};
+use embedded_graphics::text::Text;
+use embedded_graphics::Drawable;
+use embedded_graphics_core::{
+    pixelcolor::{Rgb888, WebColors},
+    prelude::Point,
+};
 use galactic_unicorn_embassy::pins::{UnicornButtonPins, UnicornDisplayPins, UnicornSensorPins};
 use galactic_unicorn_embassy::GalacticUnicorn;
 use galactic_unicorn_embassy::{HEIGHT, WIDTH};
 use log::*;
 use unicorn_graphics::UnicornGraphics;
-use cyw43::NetDriver;
 use {defmt_rtt as _, panic_probe as _};
 
 #[embassy_executor::task(pool_size = 2)]
@@ -73,7 +80,7 @@ async fn main(spawner: Spawner) {
         light_sensor: p.PIN_28,
     };
 
-    let button_pins = UnicornButtonPins {
+    let _button_pins = UnicornButtonPins {
         switch_a: Input::new(p.PIN_0, Pull::Up),
         switch_b: Input::new(p.PIN_1, Pull::Up),
         switch_c: Input::new(p.PIN_3, Pull::Up),
@@ -89,6 +96,10 @@ async fn main(spawner: Spawner) {
 
     let mut graphics = UnicornGraphics::<WIDTH, HEIGHT>::new();
     gu.set_pixels(&graphics);
+
+    // Create a new character style
+    let style = MonoTextStyle::new(&FONT_6X10, Rgb888::CSS_PURPLE);
+    let mut message = heapless::String::<6>::new();
 
     let wifi_pins = WiFiPins {
         pin_23: p.PIN_23,
@@ -125,5 +136,20 @@ async fn main(spawner: Spawner) {
         Timer::after_secs(1).await;
         control.gpio_set(0, false).await;
         Timer::after_secs(1).await;
+
+        let now = rtc::now().await;
+        let hour = now.hour;
+        let minute = now.minute;
+
+        message.clear();
+        write!(&mut message, "{hour}:{minute}").unwrap();
+
+        graphics.fill(Rgb888::new(10, 10, 10));
+
+        Text::new(&message, Point::new(12, 8), style)
+            .draw(&mut graphics)
+            .unwrap();
+
+        gu.set_pixels(&graphics);
     }
 }
