@@ -10,14 +10,15 @@ use cyw43::NetDriver;
 use embassy_executor::Spawner;
 use embassy_net::Stack;
 use embassy_rp::gpio::{Input, Pull};
+use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
+use embassy_sync::channel::Channel;
 use embassy_time::{Duration, Instant, Timer};
-use embedded_graphics::mono_font::{ascii::FONT_6X10, MonoTextStyle};
+use embedded_graphics::mono_font::{ascii::FONT_4X6, MonoTextStyle};
+use embedded_graphics::pixelcolor::{Rgb888, WebColors};
+use embedded_graphics::prelude::{Point, Primitive, Size};
+use embedded_graphics::primitives::{PrimitiveStyle, Rectangle};
 use embedded_graphics::text::Text;
 use embedded_graphics::Drawable;
-use embedded_graphics_core::{
-    pixelcolor::{Rgb888, WebColors},
-    prelude::Point,
-};
 use galactic_unicorn_embassy::pins::{UnicornButtonPins, UnicornDisplayPins, UnicornSensorPins};
 use galactic_unicorn_embassy::GalacticUnicorn;
 use galactic_unicorn_embassy::{HEIGHT, WIDTH};
@@ -25,36 +26,117 @@ use log::*;
 use unicorn_graphics::UnicornGraphics;
 use {defmt_rtt as _, panic_probe as _};
 
+#[derive(Copy, Clone)]
+enum Route {
+    EightySeven,
+    EightyEight,
+}
+
+impl From<Route> for u8 {
+    fn from(val: Route) -> Self {
+        match val {
+            Route::EightySeven => 87,
+            Route::EightyEight => 88,
+        }
+    }
+}
+
+struct DisplayMessage {
+    pub route: Route,
+    pub value: u8,
+}
+
+static CHANNEL: Channel<ThreadModeRawMutex, DisplayMessage, 8> = Channel::new();
+
+#[embassy_executor::task]
+async fn display_task(
+    mut gu: GalacticUnicorn<'static>,
+    mut graphics: UnicornGraphics<WIDTH, HEIGHT>,
+) -> ! {
+    let mut string = heapless::String::<16>::new();
+
+    loop {
+        let display_message = CHANNEL.receive().await;
+        let value = display_message.value;
+
+        match display_message.route {
+            Route::EightySeven => {
+                Rectangle::new(Point::new(0, 0), Size::new(WIDTH as u32, 6))
+                    .into_styled(PrimitiveStyle::with_fill(Rgb888::CSS_BLACK))
+                    .draw(&mut graphics)
+                    .unwrap();
+
+                string.clear();
+                write!(&mut string, "87 BUS in {value} MIN").unwrap();
+                Text::new(
+                    &string,
+                    Point::new(0, 4),
+                    MonoTextStyle::new(&FONT_4X6, Rgb888::CSS_YELLOW),
+                )
+                .draw(&mut graphics)
+                .unwrap();
+                gu.set_pixels(&graphics);
+            }
+            Route::EightyEight => {
+                Rectangle::new(Point::new(0, 5), Size::new(WIDTH as u32, 6))
+                    .into_styled(PrimitiveStyle::with_fill(Rgb888::CSS_BLACK))
+                    .draw(&mut graphics)
+                    .unwrap();
+
+                string.clear();
+                write!(&mut string, "88 BUS in {value} MIN").unwrap();
+                Text::new(
+                    &string,
+                    Point::new(0, 10),
+                    MonoTextStyle::new(&FONT_4X6, Rgb888::CSS_CYAN),
+                )
+                .draw(&mut graphics)
+                .unwrap();
+                gu.set_pixels(&graphics);
+            }
+        }
+    }
+}
+
 #[embassy_executor::task(pool_size = 2)]
 async fn next_bus_task(
     stack: &'static Stack<NetDriver<'static>>,
-    route: u8,
+    route: Route,
     stop: &'static str,
 ) -> ! {
     let one_minute = Duration::from_secs(60);
+    let channel = CHANNEL.sender();
     loop {
-        let Some(arrival_time) = fetch_next_bus(stack, route, stop).await else {
+        let route_u8 = u8::from(route);
+        let Some(arrival_time) = fetch_next_bus(stack, route_u8, stop).await else {
             Timer::after(one_minute).await;
             continue;
         };
-        info!("Route {}: next bus arrives at: {:?}", route, arrival_time);
+        info!(
+            "Route {}: next bus arrives at: {:?}",
+            route_u8, arrival_time
+        );
 
         let next_bus = Instant::from(arrival_time);
         let now = Instant::from(rtc::now().await);
         let delta = next_bus.saturating_duration_since(now);
+        let minutes = duration_as_minutes(delta) as u8;
 
-        info!(
-            "Route {}: time to next bus: {} min",
-            route,
-            duration_as_minutes(delta)
-        );
+        info!("Route {}: time to next bus: {} min", route_u8, minutes);
 
         let wait = core::cmp::max(delta / 2, one_minute);
         info!(
             "Route {}: waiting {} min to fetch again",
-            route,
+            route_u8,
             duration_as_minutes(wait)
         );
+
+        channel
+            .send(DisplayMessage {
+                route: route,
+                value: minutes,
+            })
+            .await;
         Timer::after(wait).await;
     }
 }
@@ -93,13 +175,8 @@ async fn main(spawner: Spawner) {
     };
 
     let mut gu = GalacticUnicorn::new(p.PIO0, display_pins, sensor_pins, p.ADC, p.DMA_CH0);
-
-    let mut graphics = UnicornGraphics::<WIDTH, HEIGHT>::new();
+    let graphics = UnicornGraphics::<WIDTH, HEIGHT>::new();
     gu.set_pixels(&graphics);
-
-    // Create a new character style
-    let style = MonoTextStyle::new(&FONT_6X10, Rgb888::CSS_PURPLE);
-    let mut message = heapless::String::<6>::new();
 
     let wifi_pins = WiFiPins {
         pin_23: p.PIN_23,
@@ -123,12 +200,14 @@ async fn main(spawner: Spawner) {
 
     rtc::init(p.RTC, now).await;
 
+    spawner.spawn(display_task(gu, graphics)).unwrap();
+
     spawner
-        .spawn(next_bus_task(stack, 87, env!("BUS_STOP")))
+        .spawn(next_bus_task(stack, Route::EightySeven, env!("BUS_STOP")))
         .unwrap();
 
     spawner
-        .spawn(next_bus_task(stack, 88, env!("BUS_STOP")))
+        .spawn(next_bus_task(stack, Route::EightyEight, env!("BUS_STOP")))
         .unwrap();
 
     loop {
@@ -136,20 +215,5 @@ async fn main(spawner: Spawner) {
         Timer::after_secs(1).await;
         control.gpio_set(0, false).await;
         Timer::after_secs(1).await;
-
-        let now = rtc::now().await;
-        let hour = now.hour;
-        let minute = now.minute;
-
-        message.clear();
-        write!(&mut message, "{hour}:{minute}").unwrap();
-
-        graphics.fill(Rgb888::new(10, 10, 10));
-
-        Text::new(&message, Point::new(12, 8), style)
-            .draw(&mut graphics)
-            .unwrap();
-
-        gu.set_pixels(&graphics);
     }
 }
