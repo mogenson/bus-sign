@@ -138,27 +138,32 @@ async fn next_bus_task(
             route_u8, arrival_time
         );
 
-        let next_bus = Instant::from(arrival_time);
+        let next_bus_time = Instant::from(arrival_time);
         let now = Instant::from(rtc::now().await);
-        let delta = next_bus.saturating_duration_since(now);
-        let minutes = duration_as_minutes(delta) as u8;
-
-        info!("Route {}: time to next bus: {} min", route_u8, minutes);
-
-        let wait = core::cmp::max(delta / 2, one_minute);
+        let delta = next_bus_time.saturating_duration_since(now);
+        let wait_time = core::cmp::max(delta / 2, one_minute);
+        let next_fetch_time = now + wait_time;
         info!(
             "Route {}: waiting {} min to fetch again",
             route_u8,
-            duration_as_minutes(wait)
+            duration_as_minutes(wait_time)
         );
 
-        channel
-            .send(DisplayMessage {
-                route: route,
-                value: minutes,
-            })
-            .await;
-        Timer::after(wait).await;
+        loop {
+            let now = Instant::from(rtc::now().await);
+            if now > next_fetch_time {
+                break;
+            }
+
+            let delta = next_bus_time.saturating_duration_since(now);
+            let value = duration_as_minutes(delta) as u8;
+
+            info!("Route {}: time to next bus: {} min", route_u8, value);
+
+            channel.send(DisplayMessage { route, value }).await;
+
+            Timer::after_secs(10).await;
+        }
     }
 }
 
