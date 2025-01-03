@@ -14,8 +14,8 @@ use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_time::{Duration, Instant, Timer};
 use embedded_graphics::mono_font::{ascii::FONT_4X6, MonoTextStyle};
-use embedded_graphics::pixelcolor::{Rgb888, WebColors};
-use embedded_graphics::prelude::{Point, Primitive, Size};
+use embedded_graphics::pixelcolor::Rgb888;
+use embedded_graphics::prelude::{Point, Primitive, RgbColor, Size};
 use embedded_graphics::primitives::{PrimitiveStyle, Rectangle};
 use embedded_graphics::text::Text;
 use embedded_graphics::Drawable;
@@ -25,6 +25,8 @@ use galactic_unicorn_embassy::{HEIGHT, WIDTH};
 use log::*;
 use unicorn_graphics::UnicornGraphics;
 use {defmt_rtt as _, panic_probe as _};
+
+use embedded_graphics::prelude::WebColors;
 
 #[derive(Copy, Clone)]
 enum Route {
@@ -54,44 +56,63 @@ async fn display_task(
     mut graphics: UnicornGraphics<WIDTH, HEIGHT>,
 ) -> ! {
     let mut string = heapless::String::<16>::new();
+    let yellow = MonoTextStyle::new(&FONT_4X6, Rgb888::YELLOW);
+    let orange = MonoTextStyle::new(&FONT_4X6, Rgb888::CSS_ORANGE);
+    let white = MonoTextStyle::new(&FONT_4X6, Rgb888::WHITE);
+    let black = PrimitiveStyle::with_fill(Rgb888::BLACK);
+
+    fn draw_label(
+        route: &str,
+        baseline: i32,
+        color: MonoTextStyle<Rgb888>,
+        graphics: &mut UnicornGraphics<WIDTH, HEIGHT>,
+    ) {
+        Text::new(route, Point::new(0, baseline), color)
+            .draw(graphics)
+            .unwrap();
+        Text::new("BUS", Point::new(9, baseline), color)
+            .draw(graphics)
+            .unwrap();
+        Text::new("IN", Point::new(22, baseline), color)
+            .draw(graphics)
+            .unwrap();
+        Text::new("MIN", Point::new(42, baseline), color)
+            .draw(graphics)
+            .unwrap();
+    }
+
+    draw_label("87", 4, yellow, &mut graphics);
+    draw_label("88", 10, orange, &mut graphics);
+    gu.set_pixels(&graphics);
 
     loop {
         let display_message = CHANNEL.receive().await;
         let value = display_message.value;
+        let x = if value > 9 { 32 } else { 37 };
+        string.clear();
+        write!(&mut string, "{value}").unwrap();
 
         match display_message.route {
             Route::EightySeven => {
-                Rectangle::new(Point::new(0, 0), Size::new(WIDTH as u32, 6))
-                    .into_styled(PrimitiveStyle::with_fill(Rgb888::CSS_BLACK))
+                Rectangle::new(Point::new(31, 0), Size::new(9, 5))
+                    .into_styled(black)
                     .draw(&mut graphics)
                     .unwrap();
 
-                string.clear();
-                write!(&mut string, "87 BUS in {value} MIN").unwrap();
-                Text::new(
-                    &string,
-                    Point::new(0, 4),
-                    MonoTextStyle::new(&FONT_4X6, Rgb888::CSS_YELLOW),
-                )
-                .draw(&mut graphics)
-                .unwrap();
+                Text::new(&string, Point::new(x, 4), white)
+                    .draw(&mut graphics)
+                    .unwrap();
                 gu.set_pixels(&graphics);
             }
             Route::EightyEight => {
-                Rectangle::new(Point::new(0, 5), Size::new(WIDTH as u32, 6))
-                    .into_styled(PrimitiveStyle::with_fill(Rgb888::CSS_BLACK))
+                Rectangle::new(Point::new(31, 6), Size::new(9, 5))
+                    .into_styled(black)
                     .draw(&mut graphics)
                     .unwrap();
 
-                string.clear();
-                write!(&mut string, "88 BUS in {value} MIN").unwrap();
-                Text::new(
-                    &string,
-                    Point::new(0, 10),
-                    MonoTextStyle::new(&FONT_4X6, Rgb888::CSS_CYAN),
-                )
-                .draw(&mut graphics)
-                .unwrap();
+                Text::new(&string, Point::new(x, 10), white)
+                    .draw(&mut graphics)
+                    .unwrap();
                 gu.set_pixels(&graphics);
             }
         }
@@ -175,6 +196,7 @@ async fn main(spawner: Spawner) {
     };
 
     let mut gu = GalacticUnicorn::new(p.PIO0, display_pins, sensor_pins, p.ADC, p.DMA_CH0);
+    gu.brightness = 100;
     let graphics = UnicornGraphics::<WIDTH, HEIGHT>::new();
     gu.set_pixels(&graphics);
 
