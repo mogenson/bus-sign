@@ -43,12 +43,18 @@ impl From<Route> for u8 {
     }
 }
 
+enum DisplayCommand {
+    Off,
+    On,
+    Message(DisplayMessage),
+}
+
 struct DisplayMessage {
     pub route: Route,
     pub value: u8,
 }
 
-static CHANNEL: Channel<ThreadModeRawMutex, DisplayMessage, 8> = Channel::new();
+static CHANNEL: Channel<ThreadModeRawMutex, DisplayCommand, 8> = Channel::new();
 
 #[embassy_executor::task]
 async fn display_task(
@@ -56,7 +62,7 @@ async fn display_task(
     mut graphics: UnicornGraphics<WIDTH, HEIGHT>,
 ) -> ! {
     let mut string = heapless::String::<16>::new();
-    let yellow = MonoTextStyle::new(&FONT_4X6, Rgb888::YELLOW);
+    let yellow = MonoTextStyle::new(&FONT_4X6, Rgb888::CSS_GOLD);
     let orange = MonoTextStyle::new(&FONT_4X6, Rgb888::CSS_ORANGE);
     let white = MonoTextStyle::new(&FONT_4X6, Rgb888::WHITE);
     let black = PrimitiveStyle::with_fill(Rgb888::BLACK);
@@ -86,34 +92,45 @@ async fn display_task(
     gu.set_pixels(&graphics);
 
     loop {
-        let display_message = CHANNEL.receive().await;
-        let value = display_message.value;
-        let x = if value > 9 { 32 } else { 37 };
-        string.clear();
-        write!(&mut string, "{value}").unwrap();
-
-        match display_message.route {
-            Route::EightySeven => {
-                Rectangle::new(Point::new(31, 0), Size::new(9, 5))
-                    .into_styled(black)
-                    .draw(&mut graphics)
-                    .unwrap();
-
-                Text::new(&string, Point::new(x, 4), white)
-                    .draw(&mut graphics)
-                    .unwrap();
+        match CHANNEL.receive().await {
+            DisplayCommand::Off => {
+                gu.brightness = 0;
                 gu.set_pixels(&graphics);
             }
-            Route::EightyEight => {
-                Rectangle::new(Point::new(31, 6), Size::new(9, 5))
-                    .into_styled(black)
-                    .draw(&mut graphics)
-                    .unwrap();
-
-                Text::new(&string, Point::new(x, 10), white)
-                    .draw(&mut graphics)
-                    .unwrap();
+            DisplayCommand::On => {
+                gu.brightness = 100;
                 gu.set_pixels(&graphics);
+            }
+            DisplayCommand::Message(display_message) => {
+                let value = display_message.value;
+                let x = if value > 9 { 32 } else { 36 };
+                string.clear();
+                write!(&mut string, "{value}").unwrap();
+
+                match display_message.route {
+                    Route::EightySeven => {
+                        Rectangle::new(Point::new(31, 0), Size::new(9, 5))
+                            .into_styled(black)
+                            .draw(&mut graphics)
+                            .unwrap();
+
+                        Text::new(&string, Point::new(x, 4), white)
+                            .draw(&mut graphics)
+                            .unwrap();
+                        gu.set_pixels(&graphics);
+                    }
+                    Route::EightyEight => {
+                        Rectangle::new(Point::new(31, 6), Size::new(9, 5))
+                            .into_styled(black)
+                            .draw(&mut graphics)
+                            .unwrap();
+
+                        Text::new(&string, Point::new(x, 10), white)
+                            .draw(&mut graphics)
+                            .unwrap();
+                        gu.set_pixels(&graphics);
+                    }
+                }
             }
         }
     }
@@ -150,7 +167,22 @@ async fn next_bus_task(
         );
 
         loop {
-            let now = Instant::from(rtc::now().await);
+            let current_time = rtc::now().await;
+
+            // sleep for 12 hours after 7 pm with display off
+            if current_time.hour >= 19 {
+                info!("Turning display off");
+                channel.send(DisplayCommand::Off).await;
+
+                info!("Sleeping for 12 hours");
+                Timer::after_secs(12 * 60 * 60).await;
+
+                info!("Turning display on");
+                channel.send(DisplayCommand::On).await;
+                break;
+            }
+
+            let now = Instant::from(current_time);
             if now > next_fetch_time {
                 break;
             }
@@ -160,7 +192,9 @@ async fn next_bus_task(
 
             info!("Route {}: time to next bus: {} min", route_u8, value);
 
-            channel.send(DisplayMessage { route, value }).await;
+            channel
+                .send(DisplayCommand::Message(DisplayMessage { route, value }))
+                .await;
 
             Timer::after_secs(10).await;
         }
