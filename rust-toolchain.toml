@@ -1,4 +1,6 @@
 [toolchain]
+# most recently nightly that works with galactic-unicorn before this issue:
+# https://github.com/embassy-rs/embassy/issues/3078
 channel = "nightly-2024-06-12"
 components = [
   "cargo",
