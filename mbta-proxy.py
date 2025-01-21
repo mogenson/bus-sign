@@ -18,9 +18,7 @@ class MBTAProxyHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
             print(f"MBTA response: {response.content}")
-            arrival_time = response.json()["data"][0]["attributes"]["arrival_time"]
-            data = {"datetime": arrival_time}
-            self.wfile.write(json.dumps(data).encode("utf-8"))
+            self.wfile.write(response.content)
             print("done\n\n")
 
         except requests.exceptions.RequestException as e:

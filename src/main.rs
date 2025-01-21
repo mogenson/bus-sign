@@ -146,57 +146,64 @@ async fn next_bus_task(
     let channel = CHANNEL.sender();
     loop {
         let route_u8 = u8::from(route);
-        let Some(arrival_time) = fetch_next_bus(stack, route_u8, stop).await else {
+        let Some(arrival_times) = fetch_next_bus(stack, route_u8, stop).await else {
             Timer::after(one_minute).await;
             continue;
         };
-        info!(
-            "Route {}: next bus arrives at: {:?}",
-            route_u8, arrival_time
-        );
 
-        let next_bus_time = Instant::from(arrival_time);
-        let now = Instant::from(rtc::now().await);
-        let delta = next_bus_time.saturating_duration_since(now);
-        let wait_time = core::cmp::max(delta / 2, one_minute);
-        let next_fetch_time = now + wait_time;
-        info!(
-            "Route {}: waiting {} min to fetch again",
-            route_u8,
-            duration_as_minutes(wait_time)
-        );
+        for arrival_time in arrival_times.iter() {
+            info!(
+                "Route {}: next bus arrives at: {:?}",
+                route_u8, arrival_time
+            );
 
-        loop {
-            let current_time = rtc::now().await;
-
-            // sleep for 12 hours after 7 pm with display off
-            if current_time.hour >= 19 {
-                info!("Turning display off");
-                channel.send(DisplayCommand::Off).await;
-
-                info!("Sleeping for 12 hours");
-                Timer::after_secs(12 * 60 * 60).await;
-
-                info!("Turning display on");
-                channel.send(DisplayCommand::On).await;
-                break;
-            }
-
-            let now = Instant::from(current_time);
-            if now > next_fetch_time {
-                break;
-            }
-
+            let next_bus_time = Instant::from(arrival_time);
+            let now = Instant::from(rtc::now().await);
             let delta = next_bus_time.saturating_duration_since(now);
-            let value = duration_as_minutes(delta) as u8;
+            if duration_as_minutes(delta) < 1 {
+                info!("Skipping to next bus time");
+                break;
+            }
+            let wait_time = core::cmp::max(delta / 2, one_minute);
+            let next_fetch_time = now + wait_time;
+            info!(
+                "Route {}: waiting {} min to fetch again",
+                route_u8,
+                duration_as_minutes(wait_time)
+            );
 
-            info!("Route {}: time to next bus: {} min", route_u8, value);
+            loop {
+                let current_time = rtc::now().await;
 
-            channel
-                .send(DisplayCommand::Message(DisplayMessage { route, value }))
-                .await;
+                // sleep for 12 hours after 6 pm with display off
+                if current_time.hour >= 18 {
+                    info!("Turning display off");
+                    channel.send(DisplayCommand::Off).await;
 
-            Timer::after_secs(10).await;
+                    info!("Sleeping for 12 hours");
+                    Timer::after_secs(12 * 60 * 60).await;
+
+                    info!("Turning display on");
+                    channel.send(DisplayCommand::On).await;
+                    break;
+                }
+
+                let now = Instant::from(current_time);
+                if now > next_fetch_time {
+                    break;
+                }
+
+                let delta = next_bus_time.saturating_duration_since(now);
+                let value = duration_as_minutes(delta) as u8;
+
+                info!("Route {}: time to next bus: {} min", route_u8, value);
+
+                channel
+                    .send(DisplayCommand::Message(DisplayMessage { route, value }))
+                    .await;
+
+                Timer::after_secs(10).await;
+            }
         }
     }
 }

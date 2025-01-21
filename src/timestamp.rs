@@ -2,7 +2,7 @@ use embassy_rp::rtc::{DateTime, DayOfWeek};
 use embassy_time::Instant;
 
 /// Same as a DateTime without the day_of_week member
-#[derive(core::fmt::Debug, defmt::Format)]
+#[derive(core::fmt::Debug, defmt::Format, Copy, Clone)]
 pub struct Timestamp {
     pub year: u16,
     pub month: u8,
@@ -112,6 +112,12 @@ impl From<Timestamp> for DateTime {
 
 impl From<Timestamp> for Instant {
     fn from(val: Timestamp) -> Self {
+        Instant::from_secs(val.as_secs())
+    }
+}
+
+impl From<&Timestamp> for Instant {
+    fn from(val: &Timestamp) -> Self {
         Instant::from_secs(val.as_secs())
     }
 }
