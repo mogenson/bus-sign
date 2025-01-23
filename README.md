@@ -4,6 +4,8 @@ Rust application for the [Galactic
 Unicorn](https://shop.pimoroni.com/products/space-unicorns?variant=40842033561683)
 (RP2040 version) that shows the time until the next bus arrives.
 
+![PXL_20250123_222450176~2](https://github.com/user-attachments/assets/7cf47cd9-8b1f-490c-a58b-ae4ca1f98b19)
+
 Built with [embassy-rs](https://embassy.dev/) and uses the [unicorn-
 graphics](https://github.com/domneedham/pimoroni-unicorn-rs) board support
 crate.
