@@ -141,11 +141,11 @@ async fn next_bus_task(
     stack: &'static Stack<NetDriver<'static>>,
     route: Route,
     stop: &'static str,
-) -> ! {
+) {
     let one_minute = Duration::from_secs(60);
     let channel = CHANNEL.sender();
-    loop {
-        let route_u8 = u8::from(route);
+    let route_u8 = u8::from(route);
+    'fetch_again: loop {
         let Some(arrival_times) = fetch_next_bus(stack, route_u8, stop).await else {
             Timer::after(one_minute).await;
             continue;
@@ -185,12 +185,12 @@ async fn next_bus_task(
 
                     info!("Turning display on");
                     channel.send(DisplayCommand::On).await;
-                    break;
+                    break 'fetch_again;
                 }
 
                 let now = Instant::from(current_time);
                 if now > next_fetch_time {
-                    break;
+                    break 'fetch_again;
                 }
 
                 let delta = next_bus_time.saturating_duration_since(now);
