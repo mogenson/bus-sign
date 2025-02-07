@@ -26,8 +26,6 @@ use log::*;
 use unicorn_graphics::UnicornGraphics;
 use {defmt_rtt as _, panic_probe as _};
 
-use embedded_graphics::prelude::WebColors;
-
 #[derive(Copy, Clone)]
 enum Route {
     EightySeven,
@@ -62,33 +60,34 @@ async fn display_task(
     mut graphics: UnicornGraphics<WIDTH, HEIGHT>,
 ) -> ! {
     let mut string = heapless::String::<16>::new();
-    let yellow = MonoTextStyle::new(&FONT_4X6, Rgb888::CSS_GOLD);
-    let orange = MonoTextStyle::new(&FONT_4X6, Rgb888::CSS_ORANGE);
+    let cyan = MonoTextStyle::new(&FONT_4X6, Rgb888::CYAN);
+    let yellow = MonoTextStyle::new(&FONT_4X6, Rgb888::YELLOW);
     let white = MonoTextStyle::new(&FONT_4X6, Rgb888::WHITE);
     let black = PrimitiveStyle::with_fill(Rgb888::BLACK);
 
     fn draw_label(
         route: &str,
+        route_color: MonoTextStyle<Rgb888>,
         baseline: i32,
-        color: MonoTextStyle<Rgb888>,
+        label_color: MonoTextStyle<Rgb888>,
         graphics: &mut UnicornGraphics<WIDTH, HEIGHT>,
     ) {
-        Text::new(route, Point::new(0, baseline), color)
+        Text::new(route, Point::new(0, baseline), route_color)
             .draw(graphics)
             .unwrap();
-        Text::new("BUS", Point::new(9, baseline), color)
+        Text::new("BUS", Point::new(9, baseline), label_color)
             .draw(graphics)
             .unwrap();
-        Text::new("IN", Point::new(22, baseline), color)
+        Text::new("IN", Point::new(22, baseline), label_color)
             .draw(graphics)
             .unwrap();
-        Text::new("MIN", Point::new(42, baseline), color)
+        Text::new("MIN", Point::new(42, baseline), label_color)
             .draw(graphics)
             .unwrap();
     }
 
-    draw_label("87", 4, yellow, &mut graphics);
-    draw_label("88", 10, orange, &mut graphics);
+    draw_label("87", cyan, 4, yellow, &mut graphics);
+    draw_label("88", cyan, 10, yellow, &mut graphics);
     gu.set_pixels(&graphics);
 
     loop {
