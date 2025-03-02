@@ -21,10 +21,12 @@ use static_cell::StaticCell;
 pub mod fetch;
 pub mod rtc;
 pub mod timestamp;
+pub mod universe;
 
 pub use fetch::*;
 pub use rtc::*;
 pub use timestamp::*;
+pub use universe::*;
 
 bind_interrupts!(struct Irqs {
     USBCTRL_IRQ => UsbInterruptHandler<USB>;

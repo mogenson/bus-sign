@@ -3,6 +3,7 @@
 #![feature(type_alias_impl_trait)]
 
 use bus_sign::fetch::{fetch_next_bus, fetch_time};
+use bus_sign::universe;
 use bus_sign::{connect_to_wifi, duration_as_minutes, WiFiPins};
 use bus_sign::{rtc, start_usb_logger};
 use core::fmt::Write;
@@ -228,7 +229,7 @@ async fn main(spawner: Spawner) {
         light_sensor: p.PIN_28,
     };
 
-    let _button_pins = UnicornButtonPins {
+    let button_pins = UnicornButtonPins {
         switch_a: Input::new(p.PIN_0, Pull::Up),
         switch_b: Input::new(p.PIN_1, Pull::Up),
         switch_c: Input::new(p.PIN_3, Pull::Up),
@@ -241,8 +242,14 @@ async fn main(spawner: Spawner) {
     };
 
     let mut gu = GalacticUnicorn::new(p.PIO0, display_pins, sensor_pins, p.ADC, p.DMA_CH0);
-    gu.brightness = 100;
+
+    if button_pins.switch_a.is_low() {
+        universe::run(gu).await;
+        return;
+    }
+
     let graphics = UnicornGraphics::<WIDTH, HEIGHT>::new();
+    gu.brightness = 100;
     gu.set_pixels(&graphics);
 
     let wifi_pins = WiFiPins {
