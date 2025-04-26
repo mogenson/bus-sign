@@ -1,8 +1,16 @@
+use crate::rtc;
+use core::fmt::Write;
 use embassy_rp::clocks::RoscRng;
-use embassy_time::{Duration, Ticker};
+use embassy_time::{Duration, Ticker, Timer};
+use embedded_graphics::mono_font::{ascii::FONT_5X7, MonoTextStyle};
+use embedded_graphics::pixelcolor::Rgb888;
+use embedded_graphics::prelude::{Point, RgbColor};
+use embedded_graphics::text::Text;
+use embedded_graphics::Drawable;
 use galactic_unicorn_embassy::{GalacticUnicorn, HEIGHT, WIDTH};
 use log::*;
 use rand::RngCore;
+use unicorn_graphics::UnicornGraphics;
 
 const ALIVE: u8 = 100;
 const DEAD: u8 = 50;
@@ -16,6 +24,7 @@ struct Cell {
 struct Universe<'a> {
     frame_buffer: [[[Cell; HEIGHT]; WIDTH]; 2],
     display: GalacticUnicorn<'a>,
+    graphics: UnicornGraphics<WIDTH, HEIGHT>,
     page: usize,
     born: usize,
     died: usize,
@@ -23,10 +32,11 @@ struct Universe<'a> {
 }
 
 impl<'a> Universe<'a> {
-    pub fn new(gu: GalacticUnicorn<'a>) -> Self {
+    pub fn new(gu: GalacticUnicorn<'a>, graphics: UnicornGraphics<WIDTH, HEIGHT>) -> Self {
         Universe {
             frame_buffer: [[[Cell { hue: 0, light: 0 }; HEIGHT]; WIDTH]; 2],
             display: gu,
+            graphics,
             page: 0,
             born: 0,
             died: 0,
@@ -134,7 +144,13 @@ impl<'a> Universe<'a> {
                 // info!("cell x {} y {} hue {} light {}", x, y, cell.hue, cell.light);
                 let (r, g, b) = hue_to_rgb(cell.hue, cell.light);
                 // info!("r {} g {} b {}", r, g, b);
-                self.display.set_pixel_rgb(x as u8, y as u8, r, g, b, 255);
+                // self.display.set_pixel_rgb(x as u8, y as u8, r, g, b, 255);
+                self.graphics.set_pixel_rgb(
+                    Point::new(x.try_into().unwrap(), y.try_into().unwrap()),
+                    r,
+                    g,
+                    b,
+                );
             }
         }
 
@@ -157,6 +173,57 @@ impl<'a> Universe<'a> {
         self.born = 0;
         self.died = 0;
         self.page = next_page;
+    }
+
+    pub async fn clock(&mut self) {
+        let mut string = heapless::String::<8>::new();
+        let mut now = rtc::now().await;
+
+        // sleep for 12 hours after 6 pm with display off
+        if now.hour >= 18 {
+            info!("Sleeping for 12 hours");
+            self.display.brightness = 0;
+            self.display.set_pixels(&self.graphics);
+            Timer::after_secs(12 * 60 * 60).await;
+            self.display.brightness = 100;
+            self.display.set_pixels(&self.graphics);
+            return;
+        }
+
+        if now.hour > 12 {
+            now.hour -= 12
+        }
+        write!(&mut string, "{:2}:{:02}", now.hour, now.minute).unwrap();
+
+        const X: i32 = 14;
+        const Y: i32 = 7;
+        const OUTLINE: [(i32, i32); 8] = [
+            (X - 1, Y - 1),
+            (X - 1, Y),
+            (X - 1, Y + 1),
+            (X, Y + 1),
+            (X, Y - 1),
+            (X + 1, Y + 1),
+            (X + 1, Y - 1),
+            (X + 1, Y),
+        ];
+
+        let white = MonoTextStyle::new(&FONT_5X7, Rgb888::WHITE);
+        let black = MonoTextStyle::new(&FONT_5X7, Rgb888::BLACK);
+
+        for position in OUTLINE.iter() {
+            Text::new(&string, Point::new(position.0, position.1), black)
+                .draw(&mut self.graphics)
+                .unwrap();
+        }
+
+        Text::new(&string, Point::new(X, Y), white)
+            .draw(&mut self.graphics)
+            .unwrap();
+    }
+
+    pub fn draw(&mut self) {
+        self.display.set_pixels(&self.graphics);
     }
 }
 
@@ -203,12 +270,14 @@ fn hue_to_rgb(hue: u16, light: u8) -> (u8, u8, u8) {
     (r, g, b)
 }
 
-pub async fn run(gu: GalacticUnicorn<'_>) {
+pub async fn run(gu: GalacticUnicorn<'_>, graphics: UnicornGraphics<WIDTH, HEIGHT>) {
     let mut ticker = Ticker::every(Duration::from_millis(125));
-    let mut universe = Universe::new(gu);
+    let mut universe = Universe::new(gu, graphics);
     universe.populate();
     loop {
         ticker.next().await;
         universe.step();
+        universe.clock().await;
+        universe.draw();
     }
 }

@@ -241,16 +241,11 @@ async fn main(spawner: Spawner) {
         sleep: Input::new(p.PIN_27, Pull::Up),
     };
 
+    let do_clock = button_pins.switch_a.is_low();
+
     let mut gu = GalacticUnicorn::new(p.PIO0, display_pins, sensor_pins, p.ADC, p.DMA_CH0);
-
-    if button_pins.switch_a.is_low() {
-        universe::run(gu).await;
-        return;
-    }
-
     let graphics = UnicornGraphics::<WIDTH, HEIGHT>::new();
     gu.brightness = 100;
-    gu.set_pixels(&graphics);
 
     let wifi_pins = WiFiPins {
         pin_23: p.PIN_23,
@@ -273,6 +268,11 @@ async fn main(spawner: Spawner) {
     };
 
     rtc::init(p.RTC, now).await;
+
+    if do_clock {
+        universe::run(gu, graphics).await;
+        return;
+    }
 
     spawner.spawn(display_task(gu, graphics)).unwrap();
 
