@@ -18,6 +18,7 @@ use log::*;
 use rand::RngCore;
 use static_cell::StaticCell;
 
+pub mod display;
 pub mod fetch;
 pub mod rtc;
 pub mod timestamp;

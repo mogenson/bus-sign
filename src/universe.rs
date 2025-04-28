@@ -1,3 +1,4 @@
+use crate::display;
 use crate::rtc;
 use core::fmt::Write;
 use embassy_rp::clocks::RoscRng;
@@ -7,10 +8,9 @@ use embedded_graphics::pixelcolor::Rgb888;
 use embedded_graphics::prelude::{Point, RgbColor};
 use embedded_graphics::text::Text;
 use embedded_graphics::Drawable;
-use galactic_unicorn_embassy::{GalacticUnicorn, HEIGHT, WIDTH};
+use galactic_unicorn_embassy::{HEIGHT, WIDTH};
 use log::*;
 use rand::RngCore;
-use unicorn_graphics::UnicornGraphics;
 
 const ALIVE: u8 = 100;
 const DEAD: u8 = 50;
@@ -21,22 +21,18 @@ struct Cell {
     light: u8,
 }
 
-struct Universe<'a> {
+struct Universe {
     frame_buffer: [[[Cell; HEIGHT]; WIDTH]; 2],
-    display: GalacticUnicorn<'a>,
-    graphics: UnicornGraphics<WIDTH, HEIGHT>,
     page: usize,
     born: usize,
     died: usize,
     stall_count: usize,
 }
 
-impl<'a> Universe<'a> {
-    pub fn new(gu: GalacticUnicorn<'a>, graphics: UnicornGraphics<WIDTH, HEIGHT>) -> Self {
+impl Universe {
+    pub fn new() -> Self {
         Universe {
             frame_buffer: [[[Cell { hue: 0, light: 0 }; HEIGHT]; WIDTH]; 2],
-            display: gu,
-            graphics,
             page: 0,
             born: 0,
             died: 0,
@@ -135,7 +131,7 @@ impl<'a> Universe<'a> {
         cell
     }
 
-    pub fn step(&mut self) {
+    pub async fn step(&mut self) {
         let next_page = (self.page + 1) % 2;
         for x in 0..WIDTH {
             for y in 0..HEIGHT {
@@ -144,13 +140,15 @@ impl<'a> Universe<'a> {
                 // info!("cell x {} y {} hue {} light {}", x, y, cell.hue, cell.light);
                 let (r, g, b) = hue_to_rgb(cell.hue, cell.light);
                 // info!("r {} g {} b {}", r, g, b);
-                // self.display.set_pixel_rgb(x as u8, y as u8, r, g, b, 255);
-                self.graphics.set_pixel_rgb(
-                    Point::new(x.try_into().unwrap(), y.try_into().unwrap()),
-                    r,
-                    g,
-                    b,
-                );
+                display::draw(|display| {
+                    display.graphics.set_pixel_rgb(
+                        Point::new(x.try_into().unwrap(), y.try_into().unwrap()),
+                        r,
+                        g,
+                        b,
+                    );
+                })
+                .await;
             }
         }
 
@@ -179,14 +177,18 @@ impl<'a> Universe<'a> {
         let mut string = heapless::String::<8>::new();
         let mut now = rtc::now().await;
 
-        // sleep for 12 hours after 6 pm with display off
-        if now.hour >= 18 {
-            info!("Sleeping for 12 hours");
-            self.display.brightness = 0;
-            self.display.set_pixels(&self.graphics);
-            Timer::after_secs(12 * 60 * 60).await;
-            self.display.brightness = 100;
-            self.display.set_pixels(&self.graphics);
+        if now.hour >= 21 {
+            display::draw(|display| {
+                display.gu.brightness = 0;
+                display.gu.set_pixels(&display.graphics);
+            })
+            .await;
+            Timer::after_secs(10 * 60 * 60).await;
+            display::draw(|display| {
+                display.gu.brightness = 100;
+                display.gu.set_pixels(&display.graphics);
+            })
+            .await;
             return;
         }
 
@@ -211,19 +213,25 @@ impl<'a> Universe<'a> {
         let white = MonoTextStyle::new(&FONT_5X7, Rgb888::WHITE);
         let black = MonoTextStyle::new(&FONT_5X7, Rgb888::BLACK);
 
-        for position in OUTLINE.iter() {
-            Text::new(&string, Point::new(position.0, position.1), black)
-                .draw(&mut self.graphics)
-                .unwrap();
-        }
+        display::draw(|display| {
+            for position in OUTLINE.iter() {
+                Text::new(&string, Point::new(position.0, position.1), black)
+                    .draw(&mut display.graphics)
+                    .unwrap();
+            }
 
-        Text::new(&string, Point::new(X, Y), white)
-            .draw(&mut self.graphics)
-            .unwrap();
+            Text::new(&string, Point::new(X, Y), white)
+                .draw(&mut display.graphics)
+                .unwrap();
+        })
+        .await;
     }
 
-    pub fn draw(&mut self) {
-        self.display.set_pixels(&self.graphics);
+    pub async fn draw(&mut self) {
+        display::draw(|display| {
+            display.gu.set_pixels(&display.graphics);
+        })
+        .await;
     }
 }
 
@@ -270,14 +278,14 @@ fn hue_to_rgb(hue: u16, light: u8) -> (u8, u8, u8) {
     (r, g, b)
 }
 
-pub async fn run(gu: GalacticUnicorn<'_>, graphics: UnicornGraphics<WIDTH, HEIGHT>) {
+pub async fn run() {
     let mut ticker = Ticker::every(Duration::from_millis(125));
-    let mut universe = Universe::new(gu, graphics);
+    let mut universe = Universe::new();
     universe.populate();
     loop {
         ticker.next().await;
-        universe.step();
+        universe.step().await;
         universe.clock().await;
-        universe.draw();
+        universe.draw().await;
     }
 }

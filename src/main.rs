@@ -2,6 +2,7 @@
 #![no_main]
 #![feature(type_alias_impl_trait)]
 
+use bus_sign::display;
 use bus_sign::fetch::{fetch_next_bus, fetch_time};
 use bus_sign::universe;
 use bus_sign::{connect_to_wifi, duration_as_minutes, WiFiPins};
@@ -56,10 +57,7 @@ struct DisplayMessage {
 static CHANNEL: Channel<ThreadModeRawMutex, DisplayCommand, 8> = Channel::new();
 
 #[embassy_executor::task]
-async fn display_task(
-    mut gu: GalacticUnicorn<'static>,
-    mut graphics: UnicornGraphics<WIDTH, HEIGHT>,
-) -> ! {
+async fn display_task() -> ! {
     let mut string = heapless::String::<16>::new();
     let cyan = MonoTextStyle::new(&FONT_4X6, Rgb888::CYAN);
     let yellow = MonoTextStyle::new(&FONT_4X6, Rgb888::YELLOW);
@@ -87,19 +85,28 @@ async fn display_task(
             .unwrap();
     }
 
-    draw_label("87", cyan, 4, yellow, &mut graphics);
-    draw_label("88", cyan, 10, yellow, &mut graphics);
-    gu.set_pixels(&graphics);
+    display::draw(|display| {
+        draw_label("87", cyan, 4, yellow, &mut display.graphics);
+        draw_label("88", cyan, 10, yellow, &mut display.graphics);
+        display.gu.set_pixels(&display.graphics);
+    })
+    .await;
 
     loop {
         match CHANNEL.receive().await {
             DisplayCommand::Off => {
-                gu.brightness = 0;
-                gu.set_pixels(&graphics);
+                display::draw(|display| {
+                    display.gu.brightness = 0;
+                    display.gu.set_pixels(&display.graphics);
+                })
+                .await;
             }
             DisplayCommand::On => {
-                gu.brightness = 100;
-                gu.set_pixels(&graphics);
+                display::draw(|display| {
+                    display.gu.brightness = 100;
+                    display.gu.set_pixels(&display.graphics);
+                })
+                .await;
             }
             DisplayCommand::Message(display_message) => {
                 let value = display_message.value;
@@ -109,26 +116,32 @@ async fn display_task(
 
                 match display_message.route {
                     Route::EightySeven => {
-                        Rectangle::new(Point::new(31, 0), Size::new(9, 5))
-                            .into_styled(black)
-                            .draw(&mut graphics)
-                            .unwrap();
+                        display::draw(|display| {
+                            Rectangle::new(Point::new(31, 0), Size::new(9, 5))
+                                .into_styled(black)
+                                .draw(&mut display.graphics)
+                                .unwrap();
 
-                        Text::new(&string, Point::new(x, 4), white)
-                            .draw(&mut graphics)
-                            .unwrap();
-                        gu.set_pixels(&graphics);
+                            Text::new(&string, Point::new(x, 4), white)
+                                .draw(&mut display.graphics)
+                                .unwrap();
+                            display.gu.set_pixels(&display.graphics);
+                        })
+                        .await;
                     }
                     Route::EightyEight => {
-                        Rectangle::new(Point::new(31, 6), Size::new(9, 5))
-                            .into_styled(black)
-                            .draw(&mut graphics)
-                            .unwrap();
+                        display::draw(|display| {
+                            Rectangle::new(Point::new(31, 6), Size::new(9, 5))
+                                .into_styled(black)
+                                .draw(&mut display.graphics)
+                                .unwrap();
 
-                        Text::new(&string, Point::new(x, 10), white)
-                            .draw(&mut graphics)
-                            .unwrap();
-                        gu.set_pixels(&graphics);
+                            Text::new(&string, Point::new(x, 10), white)
+                                .draw(&mut display.graphics)
+                                .unwrap();
+                            display.gu.set_pixels(&display.graphics);
+                        })
+                        .await;
                     }
                 }
             }
@@ -247,6 +260,8 @@ async fn main(spawner: Spawner) {
     let graphics = UnicornGraphics::<WIDTH, HEIGHT>::new();
     gu.brightness = 100;
 
+    display::init(display::Display { gu, graphics }).await;
+
     let wifi_pins = WiFiPins {
         pin_23: p.PIN_23,
         pin_24: p.PIN_24,
@@ -270,11 +285,11 @@ async fn main(spawner: Spawner) {
     rtc::init(p.RTC, now).await;
 
     if do_clock {
-        universe::run(gu, graphics).await;
+        universe::run().await;
         return;
     }
 
-    spawner.spawn(display_task(gu, graphics)).unwrap();
+    spawner.spawn(display_task()).unwrap();
 
     spawner
         .spawn(next_bus_task(stack, Route::EightySeven, env!("BUS_STOP")))
